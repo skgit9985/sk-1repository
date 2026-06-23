@@ -1,0 +1,456 @@
+import json
+import psycopg2
+
+host = 'hdfc.cdax5zbdnlrp.ap-south-1.redshift.amazonaws.com'
+port = 5439
+dbname = 'dev'
+user = 'awsuser'
+password = 'Admin#2026'
+
+
+
+
+query = """
+COPY dev.public.online1012emp FROM 's3://offline12-file-read-demo-lambda/empsal_part_buck.csv' IAM_ROLE 'arn:aws:iam::993726038949:role/redshift-admin' 
+FORMAT AS CSV DELIMITER ',' 
+QUOTE '"' 
+IGNOREHEADER 1 REGION AS 'ap-south-1'
+"""
+
+def connect_redshift():
+    conn = psycopg2.connect(
+        host=host,
+        database=dbname,
+        user=user,
+        port=port,
+        password=password
+    )
+    return conn
+
+def insert_data(conn):
+    cur = conn.cursor()    
+    cur.execute(query)
+    conn.commit()
+    cur.close()
+
+
+def lambda_handler(event, context):
+    conn = connect_redshift()
+    insert_data(conn)
+
+
+
+
+and when we try to load multiple files into same database that time below approach we use 
+
+in this approach we are using list_object 
+
+
+import json
+import boto3
+import psycopg2
+
+host = 'hdfc.cdax5zbdnlrp.ap-south-1.redshift.amazonaws.com'
+port = 5439
+dbname = 'dev'
+user = 'awsuser'
+password = 'Admin#2026'
+
+s3_client = boto3.client('s3')
+
+def connect_redshift():
+    conn = psycopg2.connect(
+        host=host,
+        database=dbname,
+        user=user,
+        port=port,
+        password=password
+    )
+    return conn
+
+def insert_data(conn):
+
+    cur = conn.cursor()
+
+    response = s3_client.list_objects_v2(
+        Bucket='offline12-file-read-demo-lambda',
+        Prefix='bronze/'
+    )
+
+    for obj in response['Contents']:
+
+        file_name = obj['Key']
+
+        # Skip folder object
+        if file_name.endswith('/'):
+            continue
+
+        query = f"""
+        COPY dev.public.online1012emp
+        FROM 's3://offline12-file-read-demo-lambda/{file_name}'
+        IAM_ROLE 'arn:aws:iam::993726038949:role/redshift-admin'
+        FORMAT AS CSV
+        DELIMITER ','
+        QUOTE '"'
+        IGNOREHEADER 1
+        REGION AS 'ap-south-1'
+        """
+
+        print(f"Loading file: {file_name}")
+
+        cur.execute(query)
+
+    conn.commit()
+    cur.close()
+
+def lambda_handler(event, context):
+
+    try:
+
+        conn = connect_redshift()
+
+        insert_data(conn)
+
+        conn.close()
+
+        return {
+            'statusCode': 200,
+            'body': 'All files loaded successfully'
+        }
+
+    except Exception as e:
+
+        print(e)
+
+        return {
+            'statusCode': 500,
+            'body': str(e)
+        }
+
+
+
+------- By using Credential above same query 
+
+
+import json
+import boto3
+import psycopg2
+
+s3_client = boto3.client('s3')
+
+def get_credentials_from_json():
+
+    try:
+
+        with open(r'configs/config.json') as f:
+
+            data = json.load(f)
+
+            return data['redshift_connection']
+
+    except Exception as e:
+
+        print(e)
+
+def connect_redshift():
+
+    creds = get_credentials_from_json()
+
+    conn = psycopg2.connect(
+        host=creds['host'],
+        database=creds['dbname'],
+        user=creds['user'],
+        port=creds['port'],
+        password=creds['password']
+    )
+
+    return conn
+
+def insert_data(conn):
+
+    cur = conn.cursor()
+
+    response = s3_client.list_objects_v2(
+        Bucket='offline12-file-read-demo-lambda',
+        Prefix='bronze/'
+    )
+
+    for obj in response['Contents']:
+
+        file_name = obj['Key']
+
+        if file_name.endswith('/'):
+            continue
+
+        query = f"""
+        COPY dev.public.online1012emp
+        FROM 's3://offline12-file-read-demo-lambda/{file_name}'
+        IAM_ROLE 'arn:aws:iam::993726038949:role/redshift-admin'
+        FORMAT AS CSV
+        DELIMITER ','
+        QUOTE '"'
+        IGNOREHEADER 1
+        REGION AS 'ap-south-1'
+        """
+
+        print(f"Loading file : {file_name}")
+
+        cur.execute(query)
+
+    conn.commit()
+
+    cur.close()
+
+def lambda_handler(event, context):
+
+    try:
+
+        conn = connect_redshift()
+
+        insert_data(conn)
+
+        conn.close()
+
+        return {
+            'statusCode': 200,
+            'body': 'All files loaded successfully'
+        }
+
+    except Exception as e:
+
+        print(e)
+
+        return {
+            'statusCode': 500,
+            'body': str(e)
+          
+
+
+
+question regarding Redshift 
+
+
+. Redshift Basics
+Q1. What is Amazon Redshift?
+
+Answer:
+Amazon Redshift is a fully managed, petabyte-scale cloud data warehouse service used for OLAP workloads and analytics.
+
+Q2. Difference between Redshift and RDS?
+Redshift	RDS
+Data Warehouse	Database
+OLAP	OLTP
+Analytical Queries	Transactional Queries
+Columnar Storage	Row Storage
+Petabyte Scale	Smaller Scale
+Q3. Why Redshift is faster?
+
+Answer:
+
+Columnar Storage
+Massively Parallel Processing (MPP)
+Data Compression
+Query Optimization
+Distributed Architecture
+2. Architecture
+Q4. Explain Redshift Architecture.
+Leader Node
+      |
+      |
+Compute Nodes
+      |
+      |
+Slices
+
+Leader Node
+
+Receives SQL queries
+Creates execution plan
+
+Compute Nodes
+
+Execute queries
+
+Slices
+
+Portion of node memory and disk
+Q5. What is a Slice?
+
+Answer:
+A slice is a partition of a compute node where data and query processing are distributed.
+
+Q6. What is MPP?
+
+Answer:
+Massively Parallel Processing means query execution is distributed across multiple nodes simultaneously.
+
+3. Data Loading
+Q7. How do you load data into Redshift?
+
+Using:
+
+COPY table_name
+FROM 's3://bucket/file.csv'
+IAM_ROLE 'arn:aws:iam::123456789:role/RedshiftRole'
+CSV;
+Q8. Why COPY command instead of INSERT?
+
+Answer:
+
+COPY is:
+
+Parallel
+Faster
+Scalable
+
+INSERT is slower for bulk loads.
+
+Q9. What file formats can COPY load?
+CSV
+JSON
+Parquet
+ORC
+Avro
+Q10. Difference between COPY and UNLOAD?
+
+COPY:
+
+S3 → Redshift
+
+UNLOAD:
+
+Redshift → S3
+
+Example:
+
+UNLOAD ('SELECT * FROM employee')
+TO 's3://bucket/output/'
+IAM_ROLE 'arn:aws:iam::123456789:role/RedshiftRole';
+4. Performance Tuning
+Q11. What is Distribution Style?
+
+Determines how data is distributed.
+
+Types:
+
+EVEN
+KEY
+ALL
+AUTO
+Q12. What is DISTKEY?
+
+Column used to distribute data among nodes.
+
+Example:
+
+CREATE TABLE employee
+(
+ empid INT DISTKEY,
+ dept VARCHAR(50)
+);
+Q13. What is SORTKEY?
+
+Determines physical order of data.
+
+CREATE TABLE employee
+(
+ empid INT,
+ joining_date DATE SORTKEY
+);
+
+Benefits:
+
+Faster filtering
+Faster range queries
+Q14. Difference between DISTKEY and SORTKEY?
+DISTKEY	SORTKEY
+Data Distribution	Data Sorting
+Improves Joins	Improves Filtering
+Q15. What is Vacuum?
+
+Used to reclaim space and sort data.
+
+VACUUM employee;
+Q16. What is Analyze?
+
+Updates table statistics.
+
+ANALYZE employee;
+5. Security
+Q17. How do you secure Redshift?
+IAM Roles
+VPC
+Security Groups
+SSL
+Encryption at Rest
+KMS
+Q18. How does Redshift access S3?
+
+Using IAM Role.
+
+Example:
+
+COPY employee
+FROM 's3://bucket/file.csv'
+IAM_ROLE 'arn:aws:iam::123456789:role/redshift-role';
+6. Monitoring
+Q19. How do you monitor Redshift?
+CloudWatch
+Query Monitoring Rules
+STL Tables
+SVL Tables
+Q20. How to check currently running queries?
+SELECT *
+FROM stv_recents;
+Q21. How to check query history?
+SELECT *
+FROM stl_query
+ORDER BY query DESC;
+7. Scenario-Based Questions
+Q22. COPY command failed. How will you troubleshoot?
+
+Check:
+
+IAM Role
+S3 permissions
+File format
+STL_LOAD_ERRORS
+SELECT *
+FROM stl_load_errors;
+Q23. Data loading is slow. What will you do?
+Use COPY instead of INSERT
+Use Parquet format
+Compress files
+Use multiple files
+Optimize DISTKEY
+Q24. Query is slow. What will you check?
+Explain Plan
+Distribution Style
+Sort Key
+Vacuum
+Analyze
+Q25. Redshift Interview Scenario
+
+Interviewer:
+
+How would you load 100 GB daily data from S3 to Redshift?
+
+Answer:
+
+Store files in S3
+Use Redshift COPY command
+Use IAM Role
+Load into staging table
+Validate data
+Merge into target table
+Schedule using Glue/Airflow/Lambda
+
+For a 4-year Data Engineer interview, focus heavily on:
+
+✅ COPY Command
+✅ DISTKEY & SORTKEY
+✅ Vacuum & Analyze
+✅ STL_LOAD_ERRORS
+✅ IAM Roles
+✅ Redshift Architecture
+✅ Performance Tuning Scenarios
